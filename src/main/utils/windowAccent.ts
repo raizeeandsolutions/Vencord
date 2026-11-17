@@ -33,29 +33,6 @@ function log(message: string) {
 }
 
 const script = (hwnd: bigint, color: number) => `
-$wh = Get-Service Windhawk -ErrorAction SilentlyContinue
-$key = 'HKLM:\\SOFTWARE\\Windhawk\\Engine\\Mods\\translucent-windows'
-$active = $false
-$hasEffect = $false
-if ($wh -and $wh.Status -eq 'Running' -and (Test-Path $key)) {
-    $mod = Get-ItemProperty $key
-    if ($null -eq $mod.Disabled -or $mod.Disabled -eq 0) {
-        $include = [string]$mod.Include
-        if ([string]::IsNullOrEmpty($include) -or $include -eq '*' -or $include -match '(?i)discord') {
-            $active = $true
-            $background = [string]$mod.BackgroundEffects
-            $accent = [string]$mod.AccentBlurBehind
-            if (-not [string]::IsNullOrWhiteSpace($background) -or -not [string]::IsNullOrWhiteSpace($accent)) {
-                $hasEffect = $true
-            }
-        }
-    }
-}
-if ($active -and $hasEffect) {
-    Write-Output 'skip:windhawk'
-    exit 0
-}
-
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -76,8 +53,26 @@ public static class DiscordGlass {
         public int SizeOfData;
     }
 
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
     [DllImport("user32.dll")]
     private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
+
+    public static int EnableResize(long hwnd) {
+        var handle = new IntPtr(hwnd);
+        var style = GetWindowLongPtr(handle, -16).ToInt64();
+        if ((style & 0x00040000) != 0) return 0;
+        SetWindowLongPtr(handle, -16, new IntPtr(style | 0x00040000));
+        SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, 0x37);
+        return 1;
+    }
 
     public static int Apply(long hwnd, int color) {
         var policy = new AccentPolicy { AccentState = 4, GradientColor = color };
@@ -91,6 +86,53 @@ public static class DiscordGlass {
     }
 }
 '@
+[DiscordGlass]::EnableResize(${hwnd}) | Out-Null
+
+$wh = Get-Service Windhawk -ErrorAction SilentlyContinue
+$key = 'HKLM:\\SOFTWARE\\Windhawk\\Engine\\Mods\\translucent-windows'
+$active = $false
+$hasEffect = $false
+if ($wh -and $wh.Status -eq 'Running' -and (Test-Path $key)) {
+    $mod = Get-ItemProperty $key
+    if ($null -eq $mod.Disabled -or $mod.Disabled -eq 0) {
+        $include = [string]$mod.Include
+        if ([string]::IsNullOrEmpty($include) -or $include -eq '*' -or $include -match '(?i)discord') {
+            $active = $true
+            $background = [string]$mod.BackgroundEffects
+            $accent = [string]$mod.AccentBlurBehind
+            if (-not [string]::IsNullOrWhiteSpace($background) -or -not [string]::IsNullOrWhiteSpace($accent)) {
+                $hasEffect = $true
+            }
+
+            $exclude = [string]$mod.Exclude
+            if ($exclude -match '(?i)discord') {
+                $active = $false
+            }
+
+            if ($active) {
+                $settingsKey = Join-Path $key 'Settings'
+                if (Test-Path $settingsKey) {
+                    $rules = Get-ItemProperty $settingsKey
+                    for ($i = 0; $i -lt 64; $i++) {
+                        $target = [string]$rules."RuledPrograms[$i].target"
+                        if ([string]::IsNullOrWhiteSpace($target) -or $target -notmatch '(?i)discord\\.exe$') { continue }
+                        $ruleType = [string]$rules."RuledPrograms[$i].BackgroundEffects.type"
+                        $ruleTheme = [int]$rules."RuledPrograms[$i].RenderingMod.ThemeBackground"
+                        $ruleAccent = [int]$rules."RuledPrograms[$i].RenderingMod.AccentColorControls"
+                        if (([string]::IsNullOrWhiteSpace($ruleType) -or $ruleType -eq 'none') -and $ruleTheme -eq 0 -and $ruleAccent -eq 0) {
+                            $hasEffect = $false
+                        }
+                        break
+                    }
+                }
+            }
+        }
+    }
+}
+if ($active -and $hasEffect) {
+    Write-Output 'skip:windhawk'
+    exit 0
+}
 [DiscordGlass]::Apply(${hwnd}, ${color})
 `;
 
@@ -99,7 +141,6 @@ export function applyWindowAccent(win: BrowserWindow, attempt = 0) {
 
     const bounds = win.getBounds();
     if (bounds.width < 800 || bounds.height < 600) {
-        log(`skip size ${bounds.width}x${bounds.height} attempt=${attempt}`);
         if (attempt < 20) setTimeout(() => applyWindowAccent(win, attempt + 1), 500);
         return;
     }
