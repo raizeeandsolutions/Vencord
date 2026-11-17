@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Vencord, a modification for Discord's desktop app
  * Copyright (c) 2023 Vendicated and contributors
  *
@@ -18,11 +18,38 @@
 
 import { execFile } from "child_process";
 import { BrowserWindow } from "electron";
+import { appendFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 const ACCENT_COLOR = 0x5A232323;
 const applied = new Set<string>();
+const logFile = join(tmpdir(), "vencord-accent.log");
+
+function log(message: string) {
+    try {
+        appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`);
+    } catch { }
+}
 
 const script = (hwnd: bigint, color: number) => `
+$wh = Get-Service Windhawk -ErrorAction SilentlyContinue
+$key = 'HKLM:\\SOFTWARE\\Windhawk\\Engine\\Mods\\translucent-windows'
+$active = $false
+if ($wh -and $wh.Status -eq 'Running' -and (Test-Path $key)) {
+    $mod = Get-ItemProperty $key
+    if ($null -eq $mod.Disabled -or $mod.Disabled -eq 0) {
+        $include = [string]$mod.Include
+        if ([string]::IsNullOrEmpty($include) -or $include -eq '*' -or $include -match '(?i)discord') {
+            $active = $true
+        }
+    }
+}
+if ($active) {
+    Write-Output 'skip:windhawk'
+    exit 0
+}
+
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -61,11 +88,15 @@ public static class DiscordGlass {
 [DiscordGlass]::Apply(${hwnd}, ${color})
 `;
 
-export function applyWindowAccent(win: BrowserWindow) {
-    if (process.platform !== "win32") return;
+export function applyWindowAccent(win: BrowserWindow, attempt = 0) {
+    if (process.platform !== "win32" || win.isDestroyed()) return;
 
     const bounds = win.getBounds();
-    if (bounds.width < 800 || bounds.height < 600) return;
+    if (bounds.width < 800 || bounds.height < 600) {
+        log(`skip size ${bounds.width}x${bounds.height} attempt=${attempt}`);
+        if (attempt < 20) setTimeout(() => applyWindowAccent(win, attempt + 1), 500);
+        return;
+    }
 
     try {
         const handle = win.getNativeWindowHandle();
@@ -73,19 +104,19 @@ export function applyWindowAccent(win: BrowserWindow) {
         const key = hwnd.toString();
         if (applied.has(key)) return;
         applied.add(key);
+
+        log(`apply hwnd=${key} size=${bounds.width}x${bounds.height} attempt=${attempt}`);
         const encoded = Buffer.from(script(hwnd, ACCENT_COLOR), "utf16le").toString("base64");
 
         execFile(
             "powershell.exe",
             ["-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
-            { windowsHide: true, timeout: 10_000 },
-            err => {
-                if (err) console.error("[Vencord] Failed to apply window accent", err);
-                else console.log("[Vencord] Window accent applied");
+            { windowsHide: true, timeout: 15_000 },
+            (err, stdout) => {
+                log(`result err=${err ? err.message : "none"} stdout=${stdout.trim()}`);
             }
         );
     } catch (e) {
-        console.error("[Vencord] Failed to apply window accent", e);
+        log(`error ${e}`);
     }
 }
-

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Vencord, a modification for Discord's desktop app
  * Copyright (c) 2022 Vendicated and contributors
  *
@@ -21,8 +21,8 @@ import electron, { app, BrowserWindowConstructorOptions, Menu } from "electron";
 import { dirname, join } from "path";
 
 import { RendererSettings } from "./settings";
-import { applyWindowAccent } from "./utils/windowAccent";
 import { IS_VANILLA } from "./utils/constants";
+import { applyWindowAccent } from "./utils/windowAccent";
 
 console.log("[Vencord] Starting up...");
 
