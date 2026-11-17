@@ -23,6 +23,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 const ACCENT_COLOR = 0x5A232323;
+const BUILD_MARKER = "DiscordGlass-v1.0.3-always-apply";
 const applied = new Set<string>();
 const logFile = join(tmpdir(), "vencord-accent.log");
 
@@ -87,52 +88,6 @@ public static class DiscordGlass {
 }
 '@
 [DiscordGlass]::EnableResize(${hwnd}) | Out-Null
-
-$wh = Get-Service Windhawk -ErrorAction SilentlyContinue
-$key = 'HKLM:\\SOFTWARE\\Windhawk\\Engine\\Mods\\translucent-windows'
-$active = $false
-$hasEffect = $false
-if ($wh -and $wh.Status -eq 'Running' -and (Test-Path $key)) {
-    $mod = Get-ItemProperty $key
-    if ($null -eq $mod.Disabled -or $mod.Disabled -eq 0) {
-        $include = [string]$mod.Include
-        if ([string]::IsNullOrEmpty($include) -or $include -eq '*' -or $include -match '(?i)discord') {
-            $active = $true
-            $background = [string]$mod.BackgroundEffects
-            $accent = [string]$mod.AccentBlurBehind
-            if (-not [string]::IsNullOrWhiteSpace($background) -or -not [string]::IsNullOrWhiteSpace($accent)) {
-                $hasEffect = $true
-            }
-
-            $exclude = [string]$mod.Exclude
-            if ($exclude -match '(?i)discord') {
-                $active = $false
-            }
-
-            if ($active) {
-                $settingsKey = Join-Path $key 'Settings'
-                if (Test-Path $settingsKey) {
-                    $rules = Get-ItemProperty $settingsKey
-                    for ($i = 0; $i -lt 64; $i++) {
-                        $target = [string]$rules."RuledPrograms[$i].target"
-                        if ([string]::IsNullOrWhiteSpace($target) -or $target -notmatch '(?i)discord\\.exe$') { continue }
-                        $ruleType = [string]$rules."RuledPrograms[$i].BackgroundEffects.type"
-                        $ruleTheme = [int]$rules."RuledPrograms[$i].RenderingMod.ThemeBackground"
-                        $ruleAccent = [int]$rules."RuledPrograms[$i].RenderingMod.AccentColorControls"
-                        if (([string]::IsNullOrWhiteSpace($ruleType) -or $ruleType -eq 'none') -and $ruleTheme -eq 0 -and $ruleAccent -eq 0) {
-                            $hasEffect = $false
-                        }
-                        break
-                    }
-                }
-            }
-        }
-    }
-}
-if ($active -and $hasEffect) {
-    Write-Output 'skip:windhawk'
-    exit 0
-}
 [DiscordGlass]::Apply(${hwnd}, ${color})
 `;
 
@@ -152,7 +107,7 @@ export function applyWindowAccent(win: BrowserWindow, attempt = 0) {
         if (applied.has(key)) return;
         applied.add(key);
 
-        log(`apply hwnd=${key} size=${bounds.width}x${bounds.height} attempt=${attempt}`);
+        log(`${BUILD_MARKER} hwnd=${key} size=${bounds.width}x${bounds.height} attempt=${attempt}`);
         const encoded = Buffer.from(script(hwnd, ACCENT_COLOR), "utf16le").toString("base64");
 
         execFile(
