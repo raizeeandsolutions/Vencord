@@ -36,16 +36,22 @@ const script = (hwnd: bigint, color: number) => `
 $wh = Get-Service Windhawk -ErrorAction SilentlyContinue
 $key = 'HKLM:\\SOFTWARE\\Windhawk\\Engine\\Mods\\translucent-windows'
 $active = $false
+$hasEffect = $false
 if ($wh -and $wh.Status -eq 'Running' -and (Test-Path $key)) {
     $mod = Get-ItemProperty $key
     if ($null -eq $mod.Disabled -or $mod.Disabled -eq 0) {
         $include = [string]$mod.Include
         if ([string]::IsNullOrEmpty($include) -or $include -eq '*' -or $include -match '(?i)discord') {
             $active = $true
+            $background = [string]$mod.BackgroundEffects
+            $accent = [string]$mod.AccentBlurBehind
+            if (-not [string]::IsNullOrWhiteSpace($background) -or -not [string]::IsNullOrWhiteSpace($accent)) {
+                $hasEffect = $true
+            }
         }
     }
 }
-if ($active) {
+if ($active -and $hasEffect) {
     Write-Output 'skip:windhawk'
     exit 0
 }
