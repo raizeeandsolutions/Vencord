@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Vencord, a modification for Discord's desktop app
  * Copyright (c) 2022 Vendicated and contributors
  *
@@ -21,6 +21,7 @@ import electron, { app, BrowserWindowConstructorOptions, Menu } from "electron";
 import { dirname, join } from "path";
 
 import { RendererSettings } from "./settings";
+import { applyWindowAccent } from "./utils/windowAccent";
 import { IS_VANILLA } from "./utils/constants";
 
 console.log("[Vencord] Starting up...");
@@ -106,6 +107,10 @@ if (!IS_VANILLA) {
 
             super(options);
 
+            if (process.platform === "win32" && options.title) {
+                setTimeout(() => applyWindowAccent(this), 1500);
+            }
+
             if (disableMinSize) {
                 // Disable the Electron call entirely so that Discord can't dynamically change the size
                 this.setMinimumSize = (_width: number, _height: number) => { };
@@ -138,3 +143,4 @@ if (!IS_VANILLA) {
 
 console.log("[Vencord] Loading original Discord app.asar");
 require(require.main!.filename);
+
